@@ -14,8 +14,8 @@ placeholder-mcp — cloud-ready MCP server (Remote streamable-HTTP)
 import os
 import httpx
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.responses import JSONResponse
 
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://jsonplaceholder.typicode.com")
@@ -23,7 +23,24 @@ UPSTREAM_KEY = os.environ.get("UPSTREAM_API_KEY")     # 呼叫上游 API 用（p
 SERVER_KEY = os.environ.get("API_KEY")                # 保護「你的 server」用的 token
 TIMEOUT = float(os.environ.get("REQUEST_TIMEOUT", "30"))
 
-mcp = FastMCP("placeholder-cloud", json_response=True, stateless_http=True)
+# 允許的 host：localhost + 你的雲端網域（可用環境變數覆蓋，逗號分隔）
+ALLOWED_HOSTS = os.environ.get(
+    "ALLOWED_HOSTS",
+    "localhost:*,127.0.0.1:*,mcpserver-untx.onrender.com,*.onrender.com",
+).split(",")
+
+# 關鍵：在「建立 FastMCP 物件時」就傳入 transport_security，
+# 否則 SDK 會在 __init__ 自動鎖成 localhost-only，造成雲端 421 Invalid Host header。
+mcp = FastMCP(
+    "placeholder-cloud",
+    json_response=True,
+    stateless_http=True,
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=False,   # 雲端由平台/認證層把關，這裡關掉 SDK 的 host 鎖
+        allowed_hosts=ALLOWED_HOSTS,
+        allowed_origins=["*"],
+    ),
+)
 
 
 async def _get(path: str):
@@ -91,8 +108,6 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
 
 # ── module-level app：供 uvicorn 以 `server:app` 啟動 ──────────────
 app = mcp.streamable_http_app()
-# 信任所有 host（修正反向代理造成的 421 Invalid Host header）
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
 app.add_middleware(BearerAuthMiddleware)
 
 
