@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: placeholder-mcp
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server.py
+    envVars:
+      - key: API_BASE_URL
+        value: https://jsonplaceholder.typicode.com
+      - key: API_KEY
+        sync: false   # 在 Render 後台手動填，當作保護 server 的 token
