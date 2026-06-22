@@ -4,9 +4,9 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: python server.py
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT --forwarded-allow-ips '*'
     envVars:
       - key: API_BASE_URL
         value: https://jsonplaceholder.typicode.com
       - key: API_KEY
-        sync: false   # 在 Render 後台手動填，當作保護 server 的 token
+        sync: false
