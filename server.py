@@ -88,7 +88,10 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
 
 
 if __name__ == "__main__":
+    from starlette.middleware.trustedhost import TrustedHostMiddleware
+
     app = mcp.streamable_http_app()
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
     app.add_middleware(BearerAuthMiddleware)
 
     import uvicorn
