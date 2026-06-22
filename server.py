@@ -1,18 +1,21 @@
 """
 placeholder-mcp — cloud-ready MCP server (Remote streamable-HTTP)
 
-跟 local 版的差別只有三點：
-  1. transport 改成 streamable-http
-  2. host=0.0.0.0、port 讀環境變數 PORT（雲端平台會注入）
-  3. 加上一個可開關的 Bearer token 認證中介層
+跟 local 版的差別：
+  1. transport：streamable-http（透過 module-level `app` 物件，由 uvicorn 命令列啟動）
+  2. host=0.0.0.0、port 讀環境變數 PORT（雲端平台注入）
+  3. 可開關的 Bearer token 認證中介層
+  4. 信任反向代理的 host（修正 Render/Cloudflare 的 421 Invalid Host header）
 
-把 API_KEY 環境變數設好就會啟用認證；不設則開放（僅建議本機測試用）。
+部署啟動指令（Render 的 Start Command）：
+    uvicorn server:app --host 0.0.0.0 --port $PORT --forwarded-allow-ips '*'
 """
 
 import os
 import httpx
 from mcp.server.fastmcp import FastMCP
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.responses import JSONResponse
 
 API_BASE_URL = os.environ.get("API_BASE_URL", "https://jsonplaceholder.typicode.com")
@@ -77,7 +80,6 @@ async def list_comments(post_id: int) -> list:
 # ── 認證中介層：保護你的 server 不被任意呼叫 ──────────────
 class BearerAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
-        # 健康檢查端點放行（讓雲端平台能 ping）
         if request.url.path in ("/", "/health"):
             return await call_next(request)
         if SERVER_KEY:
@@ -87,13 +89,20 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+# ── module-level app：供 uvicorn 以 `server:app` 啟動 ──────────────
+app = mcp.streamable_http_app()
+# 信任所有 host（修正反向代理造成的 421 Invalid Host header）
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
+app.add_middleware(BearerAuthMiddleware)
+
+
+# 本機直接 `python server.py` 也能跑（雲端則用上方 uvicorn 指令）
 if __name__ == "__main__":
-    from starlette.middleware.trustedhost import TrustedHostMiddleware
-
-    app = mcp.streamable_http_app()
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
-    app.add_middleware(BearerAuthMiddleware)
-
     import uvicorn
     port = int(os.environ.get("PORT", "8000"))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(
+        "server:app",
+        host="0.0.0.0",
+        port=port,
+        forwarded_allow_ips="*",
+    )
